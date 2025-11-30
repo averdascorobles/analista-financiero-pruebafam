@@ -8,236 +8,304 @@ import feedparser
 from datetime import datetime
 import time
 
-# --- 1. CONFIGURACIÓN Y ESTÉTICA "NEOBANK" ---
-st.set_page_config(layout="centered", page_title="Wealth OS", page_icon="🛡️", initial_sidebar_state="collapsed")
+# --- 1. CONFIGURACIÓN VISUAL "TERMINAL PRO" ---
+st.set_page_config(layout="wide", page_title="TERMINAL v1.0", page_icon="📈", initial_sidebar_state="collapsed")
 
+# CSS AGRESIVO PARA CAMBIAR TODO EL LOOK A MODO TERMINAL
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;600&display=swap');
     
+    /* FONDO NEGRO PROFUNDO */
+    .stApp {
+        background-color: #0e1117;
+        color: #e0e0e0;
+    }
+    
+    /* TIPOGRAFÍA TÉCNICA */
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
-        color: #1d1d1f;
-        background-color: #ffffff;
+    }
+    .mono {
+        font-family: 'Roboto Mono', monospace;
     }
     
-    /* BARRA DE PROGRESO GAMIFICADA */
-    .stProgress > div > div > div > div {
-        background-color: #00C805;
-    }
-
-    /* EL ESCUDO (SHIELD) */
-    .shield-container {
-        padding: 20px;
-        border-radius: 20px;
+    /* TICKER TAPE (CINTA DE COTIZACIONES) */
+    .ticker-wrap {
+        width: 100%;
+        overflow: hidden;
+        background-color: #161b22;
+        border-bottom: 1px solid #30363d;
+        white-space: nowrap;
+        padding: 8px 0;
         margin-bottom: 20px;
-        text-align: center;
-        transition: transform 0.3s;
     }
-    .shield-safe { background: linear-gradient(135deg, #e0fddf 0%, #ffffff 100%); border: 2px solid #00C805; }
-    .shield-warn { background: linear-gradient(135deg, #fff4e0 0%, #ffffff 100%); border: 2px solid #ffaa00; }
-    
-    /* TARJETAS NIVEL */
-    .level-badge {
-        background-color: #1d1d1f;
-        color: white;
-        padding: 5px 12px;
-        border-radius: 15px;
+    .ticker {
+        display: inline-block;
+        animation: marquee 30s linear infinite;
+    }
+    @keyframes marquee {
+        0% { transform: translateX(100%); }
+        100% { transform: translateX(-100%); }
+    }
+    .ticker-item {
+        display: inline-block;
+        padding: 0 20px;
+        font-family: 'Roboto Mono', monospace;
+        font-weight: bold;
+        font-size: 14px;
+    }
+    .up { color: #00ff41; }
+    .down { color: #ff3b30; }
+
+    /* TARJETAS ESTILO BLOOMBERG */
+    .terminal-card {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 4px; /* Bordes más rectos */
+        padding: 20px;
+        margin-bottom: 15px;
+    }
+    .terminal-header {
+        border-bottom: 1px solid #30363d;
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+        color: #8b949e;
         font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    /* METRICAS NEÓN */
+    .big-number {
+        font-family: 'Roboto Mono', monospace;
+        font-size: 28px;
+        font-weight: 700;
+        color: #ffffff;
+    }
+    .highlight-orange { color: #ff9900; } /* Bloomberg Orange */
+    
+    /* NOTICIAS TELETYPE */
+    .news-item {
+        border-left: 2px solid #ff9900;
+        padding-left: 10px;
+        margin-bottom: 12px;
+        font-family: 'Roboto Mono', monospace;
+        font-size: 13px;
+    }
+    .news-time { color: #ff9900; font-weight: bold; margin-right: 5px; }
+    
+    /* BOTONES INDUSTRIALES */
+    .stButton > button {
+        background-color: #21262d;
+        color: #58a6ff;
+        border: 1px solid #30363d;
+        border-radius: 4px;
+        font-family: 'Roboto Mono', monospace;
         font-weight: bold;
         text-transform: uppercase;
-    }
-
-    /* BOTONES GRANDES (TAP AREA) */
-    .stButton > button {
-        border-radius: 16px;
-        height: 55px;
-        font-weight: 600;
-        border: none;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         transition: all 0.2s;
     }
-    .stButton > button:hover { transform: scale(1.02); }
-    
-    /* INPUTS CUESTIONARIO */
-    .stRadio > div {
-        background-color: #f9f9f9;
-        padding: 20px;
-        border-radius: 12px;
+    .stButton > button:hover {
+        background-color: #30363d;
+        border-color: #8b949e;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GESTIÓN DE ESTADO (MEMORIA DE LA APP) ---
-if 'step' not in st.session_state: st.session_state.step = 1 # Paso del onboarding
-if 'user_profile' not in st.session_state: st.session_state.user_profile = None # Perfil detectado
-if 'user_xp' not in st.session_state: st.session_state.user_xp = 350 # Puntos de experiencia (Demo)
-if 'streak' not in st.session_state: st.session_state.streak = 3 # Racha de días
-if 'api_key' not in st.session_state: st.session_state.api_key = "" 
+# --- 2. LÓGICA DE NEGOCIO (IGUAL DE POTENTE) ---
 
-# --- 3. FUNCIONES LÓGICAS (BACKEND) ---
+# Tickers Clave para la cinta
+TICKER_TAPE_LIST = ["SPY", "QQQ", "GLD", "BTC-USD", "EURUSD=X", "VWO", "BND"]
 
-def load_instructions():
+ETF_UNIVERSE = {
+    'SPY': {'Nombre': 'S&P 500 MARKET', 'Desc': 'US LARGE CAP BLEND'},
+    'QQQ': {'Nombre': 'NASDAQ 100', 'Desc': 'US TECH / GROWTH'},
+    'GLD': {'Nombre': 'GOLD BULLION', 'Desc': 'COMMODITY / HEDGE'},
+    'VWO': {'Nombre': 'EMERGING MKTS', 'Desc': 'HIGH RISK / GROWTH'},
+    'VEA': {'Nombre': 'DEVELOPED MKTS', 'Desc': 'EX-US EQUITY'},
+    'BND': {'Nombre': 'TOTAL BOND MKT', 'Desc': 'FIXED INCOME'},
+    'XLE': {'Nombre': 'ENERGY SELECT', 'Desc': 'OIL & GAS SECTOR'},
+    'XLV': {'Nombre': 'HEALTH CARE', 'Desc': 'PHARMA / BIOTECH'}
+}
+
+if 'portfolio' not in st.session_state: st.session_state.portfolio = []
+if 'cash' not in st.session_state: st.session_state.cash = 10000.0
+
+@st.cache_data(ttl=300) # Cache 5 min
+def get_ticker_tape_data():
+    """Datos rápidos para la cinta de arriba"""
+    data_str = ""
     try:
-        with open("Instrucciones.md", "r", encoding="utf-8") as f: return f.read()
-    except: return "Actúa como asesor experto."
+        tickers = yf.download(TICKER_TAPE_LIST, period="1d", progress=False)['Close']
+        for t in TICKER_TAPE_LIST:
+            try:
+                price = tickers[t].iloc[-1]
+                prev = tickers[t].iloc[0] # Apertura aprox
+                delta = ((price - prev)/prev)*100
+                color_class = "up" if delta >= 0 else "down"
+                symbol = "▲" if delta >= 0 else "▼"
+                data_str += f"<span class='ticker-item'>{t} {price:.2f} <span class='{color_class}'>{symbol} {delta:.2f}%</span></span>"
+            except: continue
+    except: 
+        data_str = "<span class='ticker-item'>SYSTEM_OFFLINE_RETRYING...</span>"
+    return data_str
 
 @st.cache_data(ttl=3600)
-def scan_satellites():
-    # SIMULACIÓN DE ESCANEO PARA LA DEMO (Para que vaya rápido en la prueba UX)
-    # En producción, aquí va tu código completo de yfinance
-    return pd.DataFrame([
-        {'Ticker': 'GLD', 'Nombre': 'Oro Físico', 'Retorno 1M': 4.2, 'Volatilidad': 11, 'Perfil': 'Conservador', 'Score': 2.5},
-        {'Ticker': 'QQQ', 'Nombre': 'Nasdaq 100', 'Retorno 1M': 1.8, 'Volatilidad': 18, 'Perfil': 'Agresivo', 'Score': 1.9},
-        {'Ticker': 'VWO', 'Nombre': 'Emergentes', 'Retorno 1M': -0.5, 'Volatilidad': 15, 'Perfil': 'Agresivo', 'Score': 0},
-    ])
+def analyze_market_system():
+    """Análisis Técnico de Mercado"""
+    try:
+        spy = yf.Ticker("SPY")
+        hist = spy.history(period="6mo")
+        current = hist['Close'].iloc[-1]
+        ma_200 = hist['Close'].mean() 
+        daily_ret = hist['Close'].pct_change()
+        vol = daily_ret.std() * np.sqrt(252) * 100
+        
+        status = "BULLISH" if current > ma_200 else "BEARISH"
+        risk = "HIGH" if vol > 20 else "NORMAL"
+        return status, risk, vol
+    except: return "N/A", "N/A", 0
 
-def calculate_profile(age, goal, panic):
-    """Algoritmo invisible de perfilado"""
-    score = 0
-    # Edad
-    if age < 35: score += 3
-    elif age < 55: score += 2
-    else: score += 1
-    
-    # Meta
-    if goal == "Lambo (Riqueza Máxima)": score += 3
-    elif goal == "Jubilación Tranquila": score += 1
-    
-    # Reacción al miedo (Lo más importante)
-    if panic == "Vendo todo": score -= 5 # Penalización fuerte
-    elif panic == "No hago nada": score += 2
-    elif panic == "Compro más (Ofertas)": score += 5
-    
-    if score <= 2: return "Conservador"
-    elif score <= 6: return "Equilibrado"
-    else: return "Agresivo"
+@st.cache_data(ttl=3600)
+def scan_opportunities():
+    data = []
+    tickers = list(ETF_UNIVERSE.keys())
+    try:
+        history = yf.download(tickers, period="3mo", progress=False)['Close']
+        for ticker in tickers:
+            try:
+                prices = history[ticker].dropna()
+                if len(prices) < 20: continue
+                curr = prices.iloc[-1]
+                prev = prices.iloc[-22]
+                ret_1m = ((curr - prev) / prev) * 100
+                vol = prices.pct_change().std() * np.sqrt(252) * 100
+                score = ret_1m / (vol if vol > 0 else 1)
+                
+                # Generar señal técnica
+                signal = "BUY" if ret_1m > 2 else "HOLD" if ret_1m > -2 else "SELL"
+                
+                data.append({'Ticker': ticker, 'Info': ETF_UNIVERSE[ticker], 'Price': curr, 'Ret': ret_1m, 'Vol': vol, 'Score': score, 'Signal': signal})
+            except: continue
+        return pd.DataFrame(data).sort_values(by='Score', ascending=False).head(3)
+    except: return pd.DataFrame()
 
-def generate_simple_advice(profile, api_key):
-    """Versión simplificada del prompt para el usuario novato"""
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
-    
-    prompt = f"""
-    Actúa como un mentor financiero amigable (Estilo Duolingo/Headspace).
-    El usuario es perfil: {profile}.
-    
-    Dame 3 consejos MUY CORTOS (1 frase cada uno) y motivadores para hoy.
-    Usa emojis. No uses jerga técnica.
-    """
-    return model.generate_content(prompt).text
+def get_terminal_news():
+    try:
+        rss_url = "https://es.investing.com/rss/news_25.rss"
+        feed = feedparser.parse(rss_url)
+        return feed.entries[:6]
+    except: return []
 
-# --- 4. FLUJO DE LA APLICACIÓN ---
+# --- 3. INTERFAZ TIPO TERMINAL ---
 
-# A) PANTALLA DE BIENVENIDA (ONBOARDING)
-if st.session_state.user_profile is None:
-    st.markdown("### 👋 Hola, vamos a configurar tu plan")
-    progress = (st.session_state.step / 4) * 100
-    st.progress(int(progress))
+# 1. CINTA DE COTIZACIONES (HEADER)
+tape_html = get_ticker_tape_data()
+st.markdown(f"""
+<div class="ticker-wrap">
+    <div class="ticker">
+        {tape_html} {tape_html} </div>
+</div>
+""", unsafe_allow_html=True)
+
+# 2. STATUS BAR (DATOS MACRO)
+m_status, m_risk, m_vol = analyze_market_system()
+col_sys1, col_sys2, col_sys3, col_sys4 = st.columns(4)
+
+with col_sys1:
+    st.markdown(f"""<div style="font-family:'Roboto Mono'; font-size:12px; color:#888;">SYSTEM DATE</div><div style="color:white; font-weight:bold;">{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>""", unsafe_allow_html=True)
+with col_sys2:
+    color = "#00ff41" if m_status == "BULLISH" else "#ff3b30"
+    st.markdown(f"""<div style="font-family:'Roboto Mono'; font-size:12px; color:#888;">MARKET TREND</div><div style="color:{color}; font-weight:bold;">● {m_status}</div>""", unsafe_allow_html=True)
+with col_sys3:
+    color = "#ff9900" if m_risk == "HIGH" else "#00ff41"
+    st.markdown(f"""<div style="font-family:'Roboto Mono'; font-size:12px; color:#888;">VOLATILITY IDX</div><div style="color:{color}; font-weight:bold;">{m_vol:.2f}% ({m_risk})</div>""", unsafe_allow_html=True)
+with col_sys4:
+    st.markdown(f"""<div style="font-family:'Roboto Mono'; font-size:12px; color:#888;">USER SESSION</div><div style="color:#58a6ff; font-weight:bold;">GUEST_ADMIN</div>""", unsafe_allow_html=True)
+
+st.markdown("---")
+
+# 3. CUERPO PRINCIPAL (GRID)
+col_main, col_news = st.columns([2, 1])
+
+with col_main:
+    st.markdown("### ⚡ ALGORITHMIC OPPORTUNITIES (TOP 3)")
     
-    # Paso 1: Edad
-    if st.session_state.step == 1:
-        st.header("¿Cuál es tu edad?")
-        st.caption("Para ajustar el horizonte temporal.")
-        age = st.radio("Selecciona:", ["Menos de 30", "30 - 50", "Más de 50"], label_visibility="collapsed")
-        if st.button("Continuar ➔"):
-            st.session_state.age_input = 25 if age == "Menos de 30" else 40 if age == "30 - 50" else 60
-            st.session_state.step = 2
-            st.rerun()
-
-    # Paso 2: Meta
-    elif st.session_state.step == 2:
-        st.header("¿Para qué es este dinero?")
-        st.caption("Sé honesto, aquí no juzgamos.")
-        goal = st.radio("Objetivo:", ["Jubilación Tranquila", "Comprarme una casa", "Lambo (Riqueza Máxima)"], label_visibility="collapsed")
-        if st.button("Continuar ➔"):
-            st.session_state.goal_input = goal
-            st.session_state.step = 3
-            st.rerun()
+    top_df = scan_opportunities()
+    
+    if not top_df.empty:
+        for idx, row in top_df.iterrows():
+            # Color lógico para terminal
+            signal_color = "#00ff41" if row['Signal'] == "BUY" else "#ff9900"
+            ret_color = "up" if row['Ret'] >= 0 else "down"
+            ret_sym = "+" if row['Ret'] >= 0 else ""
             
-    # Paso 3: Test de Estrés (Invisible)
-    elif st.session_state.step == 3:
-        st.header("😱 ¡El mercado cae un 20% mañana!")
-        st.subheader("¿Qué haces?")
-        panic = st.radio("Reacción:", ["Vendo todo para no perder más", "No hago nada, espero", "Compro más (Ofertas)"], label_visibility="collapsed")
-        if st.button("Analizar mi Perfil ➔"):
-            # CÁLCULO DEL PERFIL
-            profile = calculate_profile(st.session_state.age_input, st.session_state.goal_input, panic)
-            st.session_state.user_profile = profile
-            st.success(f"¡Perfil Detectado: {profile}!")
-            time.sleep(1.5)
-            st.rerun()
-
-# B) PANTALLA PRINCIPAL (DASHBOARD GAMIFICADO)
-else:
-    # --- HEADER GAMIFICADO ---
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c1:
-        st.markdown(f"🔥 **{st.session_state.streak} Días**")
-    with c3:
-        level = "Novato" if st.session_state.user_xp < 500 else "Estratega"
-        st.markdown(f"<span class='level-badge'>Nivel: {level}</span>", unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # --- EL ESCUDO (SEMÁFORO) ---
-    # Lógica simple: Si mercado volátil y perfil conservador -> Aviso
-    market_status = "Safe" # Esto vendría de tu scan_satellites() real
-    
-    if market_status == "Safe":
-        st.markdown(f"""
-        <div class="shield-container shield-safe">
-            <h1 style="margin:0;">🛡️ Escudo Activo</h1>
-            <p style="color:#666;">Tu cartera <b>{st.session_state.user_profile}</b> está equilibrada.</p>
-        </div>
-        """, unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="terminal-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <span class="big-number highlight-orange">{row['Ticker']}</span>
+                        <span style="font-family:'Roboto Mono'; color:#8b949e; margin-left:10px;">{row['Info']['Nombre']}</span>
+                    </div>
+                    <div style="text-align:right;">
+                        <div class="big-number {ret_color}">{ret_sym}{row['Ret']:.2f}%</div>
+                        <div style="font-size:11px; color:#888;">1M MOMENTUM</div>
+                    </div>
+                </div>
+                <div style="margin-top:10px; display:flex; justify-content:space-between; border-top:1px solid #30363d; padding-top:10px;">
+                    <div style="font-family:'Roboto Mono'; font-size:12px; color:#8b949e;">
+                        VOL: {row['Vol']:.2f}% | SCORE: {row['Score']:.2f}
+                    </div>
+                    <div style="font-family:'Roboto Mono'; font-weight:bold; color:{signal_color}; border:1px solid {signal_color}; padding:2px 8px; border-radius:2px;">
+                        SIGNAL: {row['Signal']}
+                    </div>
+                </div>
+                <div style="margin-top:10px; font-size:12px; color:#ccc;">
+                    Strategy: {row['Info']['Desc']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Botón de acción integrado en el flujo
+            c1, c2 = st.columns([1, 4])
+            with c1:
+                if st.button(f"EXECUTE {row['Ticker']}", key=row['Ticker']):
+                    st.toast(f"ORDER SENT: BUY {row['Ticker']} @ MKT PRICE", icon="✅")
+                    # Lógica de cartera ficticia aquí
     else:
-        st.markdown(f"""
-        <div class="shield-container shield-warn">
-            <h1 style="margin:0;">⚠️ Atención</h1>
-            <p>Hemos detectado volatilidad. Revisa tus satélites.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.info("INITIALIZING DATA FEEDS... PLEASE WAIT.")
 
-    # --- MENÚ PRINCIPAL SIMPLIFICADO ---
+with col_news:
+    st.markdown("### 📰 NEWS WIRE (REAL-TIME)")
+    st.markdown("<div class='terminal-card'>", unsafe_allow_html=True)
     
-    # Aquí escondemos la complejidad. Solo mostramos "Qué hacer hoy".
-    st.subheader("🎯 Tu Misión de Hoy")
-    
-    with st.expander("Ver Análisis Inteligente (Requiere API Key)", expanded=True):
-        api_key_input = st.text_input("Tu Llave Maestra (Google API Key):", type="password", value=st.session_state.api_key)
-        
-        if st.button("✨ Generar Consejo Diario"):
-            if not api_key_input:
-                st.error("Necesitamos tu llave para despertar a la IA.")
-            else:
-                st.session_state.api_key = api_key_input # Guardamos para la sesión
-                with st.spinner("Consultando al Mentor..."):
-                    advice = generate_simple_advice(st.session_state.user_profile, api_key_input)
-                    st.info(advice)
-                    
-                    # GAMIFICACIÓN: DAR PUNTOS
-                    st.balloons()
-                    st.session_state.user_xp += 50
-                    st.toast(f"+50 XP Ganados! (Total: {st.session_state.user_xp})")
+    news = get_terminal_news()
+    if news:
+        for n in news:
+            time_str = datetime(*n.published_parsed[:6]).strftime('%H:%M')
+            st.markdown(f"""
+            <div class="news-item">
+                <span class="news-time">[{time_str}]</span>
+                <a href="{n.link}" target="_blank" style="color:#e0e0e0; text-decoration:none;">{n.title}</a>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.write("NO SIGNAL.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- PESTAÑAS OCULTAS (PARA EL QUE QUIERA MÁS) ---
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.caption("HERRAMIENTAS AVANZADAS")
-    
-    tab1, tab2 = st.tabs(["🚀 Oportunidades", "💰 Calculadora"])
-    
-    with tab1:
-        st.markdown("Aquí iría tu escáner de satélites (código anterior).")
-        # Aquí puedes llamar a tu función scan_satellites() real
-        df = scan_satellites()
-        st.dataframe(df)
-    
-    with tab2:
-        st.markdown("Aquí iría tu calculadora de interés compuesto.")
-        
-    # BOTÓN DE RESET (PARA PROBAR OTRA VEZ)
-    if st.button("🔄 Reiniciar Perfil (Debug)"):
-        st.session_state.user_profile = None
-        st.session_state.step = 1
-        st.rerun()
+    # Mini Calculadora Rápida en Sidebar
+    st.markdown("### 🧮 QUICK CALC")
+    with st.container(border=True):
+        inv = st.number_input("CAPITAL", value=10000, label_visibility="collapsed")
+        st.caption("EST. ANNUAL YIELD (7%)")
+        res = inv * 1.07
+        st.markdown(f"<div class='big-number'>{res:,.0f} €</div>", unsafe_allow_html=True)
+
+# 4. FOOTER TÉCNICO
+st.markdown("---")
+st.markdown("""
+<div style="text-align:center; font-family:'Roboto Mono'; font-size:10px; color:#555;">
+    TERMINAL ID: W-OS-9921 • LATENCY: 24ms • DATA SOURCE: YFINANCE/RSS • SECURE CONNECTION
+</div>
+""", unsafe_allow_html=True)
