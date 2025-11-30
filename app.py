@@ -4,10 +4,10 @@ import pandas as pd
 import numpy as np
 import google.generativeai as genai
 import plotly.graph_objects as go
+import feedparser # <--- LIBRERÍA NUEVA PARA NOTICIAS
 from datetime import datetime
 
-# --- 1. CONFIGURACIÓN Y ESTÉTICA (APPLE STYLE) ---
-# initial_sidebar_state="collapsed" -> Oculta la barra lateral por defecto para no liar
+# --- 1. CONFIGURACIÓN ---
 st.set_page_config(layout="wide", page_title="Wealth OS", page_icon="✨", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -17,12 +17,10 @@ st.markdown("""
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
         color: #1d1d1f;
-        background-color: #fbfbfd; /* Fondo gris Apple muy suave */
+        background-color: #fbfbfd;
     }
     
-    h1, h2, h3 { font-weight: 600; letter-spacing: -0.5px; }
-    
-    /* PANEL DE CONTROL (NUEVO) */
+    /* PANEL DE CONTROL */
     .control-panel {
         background-color: white;
         padding: 25px;
@@ -32,23 +30,13 @@ st.markdown("""
         margin-bottom: 30px;
     }
     
-    /* Tarjetas de Métricas */
-    .stMetric {
-        background-color: #ffffff;
-        border: 1px solid #e5e5e5;
-        border-radius: 12px;
-        padding: 15px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.02);
-    }
-    
-    /* Botón Principal Grande */
+    /* BOTONES */
     .stButton > button {
         background-color: #000000;
         color: white;
         border-radius: 12px;
         border: none;
         padding: 15px 30px;
-        font-size: 16px;
         font-weight: 500;
         width: 100%;
         transition: transform 0.1s;
@@ -58,30 +46,20 @@ st.markdown("""
         transform: scale(1.01);
     }
     
-    /* Inputs más bonitos */
-    .stSelectbox > div > div {
-        background-color: #f5f5f7;
-        border-radius: 8px;
-        border: none;
-    }
-    .stTextInput > div > div > input {
-        background-color: #f5f5f7;
-        border-radius: 8px;
-        border: none;
-    }
-
-    /* Noticias */
+    /* NOTICIAS */
     .news-card {
         background-color: white;
         padding: 15px;
         border-radius: 10px;
-        border-left: 4px solid #1d1d1f;
+        border-left: 4px solid #ff7700; /* Naranja Investing */
         margin-bottom: 12px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        transition: transform 0.2s;
     }
+    .news-card:hover { transform: translateX(5px); }
     .news-source { font-size: 10px; color: #888; text-transform: uppercase; font-weight: bold; }
-    .news-title { font-size: 15px; font-weight: 600; color: #111; margin: 6px 0; }
-    .news-link { text-decoration: none; color: #007AFF; font-size: 12px; }
+    .news-title { font-size: 15px; font-weight: 600; color: #111; margin: 6px 0; line-height: 1.4; }
+    .news-link { text-decoration: none; color: #007AFF; font-size: 12px; font-weight: 500; }
     
     .card-container {
         background-color: #ffffff;
@@ -111,17 +89,10 @@ POPULAR_MANUAL_CORES = {
 }
 
 SATELLITE_UNIVERSE = {
-    'GLD': 'Oro Físico',
-    'VWO': 'Emergentes',
-    'VEA': 'Europa/Pacífico',
-    'XLE': 'Energía',
-    'XLF': 'Financiero',
-    'XLV': 'Salud',
-    'SMH': 'Semiconductores',
-    'VIG': 'Dividendos',
-    'ARKK': 'Innovación',
-    'TLT': 'Bonos 20+ Años',
-    'IWM': 'Small Caps'
+    'GLD': 'Oro Físico', 'VWO': 'Emergentes', 'VEA': 'Europa/Pacífico',
+    'XLE': 'Energía', 'XLF': 'Financiero', 'XLV': 'Salud',
+    'SMH': 'Semiconductores', 'VIG': 'Dividendos', 'ARKK': 'Innovación',
+    'TLT': 'Bonos 20+ Años', 'IWM': 'Small Caps'
 }
 
 # --- 3. FUNCIONES LÓGICAS ---
@@ -137,6 +108,7 @@ def load_instructions():
 def scan_satellites():
     data = []
     tickers = list(SATELLITE_UNIVERSE.keys())
+    # Descarga optimizada
     history = yf.download(tickers, period="6mo", progress=False)['Close']
     
     for ticker in tickers:
@@ -162,20 +134,29 @@ def scan_satellites():
         except: continue
     return pd.DataFrame(data).sort_values(by='Score', ascending=False)
 
-def get_general_news():
-    sources = ["SPY", "XLF", "^IXIC"] 
+def get_rss_news():
+    """Obtiene noticias en ESPAÑOL desde RSS Oficiales (Infalible)"""
+    rss_urls = [
+        "https://es.investing.com/rss/news_25.rss", # Mercado de Valores
+        "https://es.investing.com/rss/news_285.rss" # Noticias Populares
+    ]
+    
     news_feed = []
-    seen = set()
-    for t in sources:
+    for url in rss_urls:
         try:
-            stock = yf.Ticker(t)
-            latest = stock.news[:3]
-            for n in latest:
-                if n['link'] not in seen:
-                    news_feed.append({'Title': n['title'], 'Link': n['link'], 'Publisher': n['publisher'], 'Time': n['providerPublishTime']})
-                    seen.add(n['link'])
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:5]: # 5 noticias de cada fuente
+                news_feed.append({
+                    'Title': entry.title,
+                    'Link': entry.link,
+                    'Publisher': "Investing.com España",
+                    # Intentamos parsear la fecha, si falla ponemos 'Hoy'
+                    'Time': entry.published_parsed if hasattr(entry, 'published_parsed') else datetime.now()
+                })
         except: continue
-    return sorted(news_feed, key=lambda x: x['Time'], reverse=True)
+    
+    # Ordenar por fecha (más reciente primero) y devolver top 10
+    return sorted(news_feed, key=lambda x: x['Time'], reverse=True)[:10]
 
 def generate_advisor_report(profile, custom_core, top_satellites, api_key):
     genai.configure(api_key=api_key)
@@ -185,29 +166,25 @@ def generate_advisor_report(profile, custom_core, top_satellites, api_key):
     prompt = f"{instructions}\nPERFIL: {profile}\nCORE ELEGIDO: {custom_core['Ticker']}\nTOP SATÉLITES:\n{satellites_txt}\nGenera estrategia."
     return model.generate_content(prompt).text
 
-# --- 4. INTERFAZ PRINCIPAL (EL CAMBIO GRANDE) ---
+# --- 4. INTERFAZ ---
 
 st.title(f"Wealth OS")
-st.caption(f"Inteligencia Financiera | {datetime.now().strftime('%d %B %Y')}")
+st.caption(f"Panel de Inteligencia | {datetime.now().strftime('%d/%m/%Y')}")
 
-# --- CONTENEDOR DE CONFIGURACIÓN (VISIBLE SIEMPRE) ---
-# Usamos un expander que está ABIERTO por defecto la primera vez
-with st.expander("👤 Configuración de Inversor (Haz clic para editar)", expanded=True):
+# PANEL DE CONTROL EXPANDIBLE
+with st.expander("👤 Configuración de Inversor", expanded=True):
     st.markdown('<div class="control-panel">', unsafe_allow_html=True)
-    
     col_key, col_prof = st.columns([2, 1])
     with col_key:
-        api_key = st.text_input("🔑 Tu Clave de Acceso (Google API Key)", type="password", placeholder="Pega aquí tu sk-...")
+        api_key = st.text_input("🔑 Google API Key", type="password")
     with col_prof:
-        risk_profile = st.selectbox("Nivel de Riesgo", ["Conservador", "Equilibrado", "Agresivo"], index=1)
-        
-    st.markdown("---")
-    st.markdown("**🎯 Tu Activo Base (Núcleo)**")
+        risk_profile = st.selectbox("Perfil Riesgo", ["Conservador", "Equilibrado", "Agresivo"], index=1)
     
+    st.markdown("---")
+    st.markdown("**🎯 Activo Base (Núcleo)**")
     col_rad, col_sel = st.columns([1, 2])
     with col_rad:
-        core_mode = st.radio("Selección:", ["Automático (IA)", "Manual (Lista)"], label_visibility="collapsed")
-    
+        core_mode = st.radio("Modo:", ["Automático (IA)", "Manual"], label_visibility="collapsed")
     selected_core = None
     with col_sel:
         if core_mode == "Automático (IA)":
@@ -215,24 +192,22 @@ with st.expander("👤 Configuración de Inversor (Haz clic para editar)", expan
             st.info(f"Recomendado: **{suggestion['Ticker']}** - {suggestion['Nombre']}")
             selected_core = suggestion
         else:
-            manual_choice = st.selectbox("Elige tu fondo actual:", list(POPULAR_MANUAL_CORES.keys()))
+            manual_choice = st.selectbox("Elige tu fondo:", list(POPULAR_MANUAL_CORES.keys()))
             manual_ticker = POPULAR_MANUAL_CORES[manual_choice]
             selected_core = {"Ticker": manual_ticker, "Nombre": manual_choice, "Riesgo": "Manual"}
-            
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- PESTAÑAS ---
-tab1, tab2, tab3 = st.tabs(["📊 Estrategia", "🔮 Calculadora", "📰 Noticias"])
+# TABS
+tab1, tab2, tab3 = st.tabs(["📊 Estrategia", "🔮 Calculadora", "📰 Noticias (ES)"])
 
-# --- PESTAÑA 1: ESTRATEGIA ---
+# TAB 1: ESTRATEGIA
 with tab1:
     st.markdown("<br>", unsafe_allow_html=True)
-    # BOTÓN GRANDE Y CENTRAL
-    if st.button("🚀 GENERAR PLAN DE INVERSIÓN AHORA", type="primary"):
+    if st.button("🚀 GENERAR PLAN DE INVERSIÓN", type="primary"):
         if not api_key:
-            st.error("⚠️ Por favor, introduce la API Key en el panel de arriba.")
+            st.error("⚠️ Introduce la API Key arriba.")
         else:
-            with st.spinner(f"Analizando mercado para complementar {selected_core['Ticker']}..."):
+            with st.spinner(f"Diseñando estrategia para {selected_core['Ticker']}..."):
                 df_market = scan_satellites()
                 if risk_profile == "Conservador":
                     df_filtered = df_market[df_market['Perfil'].isin(["Conservador", "Equilibrado"])]
@@ -241,14 +216,13 @@ with tab1:
                 top_3 = df_filtered.head(3)
                 report = generate_advisor_report(risk_profile, selected_core, top_3, api_key)
             
-            # RESULTADOS
+            # Resultados
             col_core, col_txt = st.columns([1, 3])
             with col_core:
                 st.metric("Tu Base", selected_core['Ticker'], "Núcleo")
             with col_txt:
-                st.success(f"Estrategia generada para perfil **{risk_profile}**.")
+                st.success(f"Plan generado para perfil **{risk_profile}**.")
 
-            st.markdown("#### Oportunidades Satélite (Mes)")
             c1, c2, c3 = st.columns(3)
             for idx, (i, row) in enumerate(top_3.iterrows()):
                 color = "#00C805" if row['Retorno 1M'] > 0 else "#FF3B30"
@@ -260,18 +234,17 @@ with tab1:
                         <h2 style="color:{color};">{row['Retorno 1M']:.1f}%</h2>
                     </div>
                     """, unsafe_allow_html=True)
-            
             with st.container():
                 st.markdown(report)
 
-# --- PESTAÑA 2: CALCULADORA ---
+# TAB 2: CALCULADORA
 with tab2:
     col_inp, col_graph = st.columns([1, 2])
     with col_inp:
         ini = st.number_input("Capital Inicial (€)", 1000, 100000, 5000)
-        mon = st.number_input("Aportación Mensual (€)", 100, 5000, 300)
+        mon = st.number_input("Mensual (€)", 100, 5000, 300)
         yrs = st.slider("Años", 5, 30, 15)
-        r = st.slider("Interés Anual (%)", 2.0, 12.0, 7.0)
+        r = st.slider("Interés (%)", 2.0, 12.0, 7.0)
     with col_graph:
         months = yrs * 12
         val = [ini]
@@ -284,18 +257,25 @@ with tab2:
         fig.update_layout(height=300, margin=dict(l=0,r=0,t=0,b=0), template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
-# --- PESTAÑA 3: NOTICIAS ---
+# TAB 3: NOTICIAS (NUEVO CÓDIGO RSS)
 with tab3:
-    st.caption("Titulares en tiempo real")
-    if st.button("Actualizar Noticias"):
-        news = get_general_news()
-        col1, col2 = st.columns(2)
-        for idx, n in enumerate(news):
-            with col1 if idx % 2 == 0 else col2:
-                st.markdown(f"""
-                <div class="news-card">
-                    <div class="news-source">{n['Publisher']}</div>
-                    <div class="news-title">{n['Title']}</div>
-                    <a href="{n['Link']}" target="_blank" class="news-link">Leer más ↗</a>
-                </div>
-                """, unsafe_allow_html=True)
+    st.markdown("### 🇪🇸 Noticias de Mercado (En Español)")
+    st.caption("Fuente: Investing.com España (Tiempo Real)")
+    
+    if st.button("🔄 Actualizar Noticias"):
+        with st.spinner("Descargando titulares..."):
+            news = get_rss_news()
+            
+            if not news:
+                st.warning("No se pudieron cargar noticias.")
+            else:
+                col1, col2 = st.columns(2)
+                for idx, n in enumerate(news):
+                    with col1 if idx % 2 == 0 else col2:
+                        st.markdown(f"""
+                        <div class="news-card">
+                            <div class="news-source">{n['Publisher']}</div>
+                            <div class="news-title">{n['Title']}</div>
+                            <a href="{n['Link']}" target="_blank" class="news-link">Leer noticia completa ↗</a>
+                        </div>
+                        """, unsafe_allow_html=True)
