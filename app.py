@@ -26,15 +26,16 @@ st.markdown("""
     .clean-card { background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); transition: transform 0.2s; height: 100%; }
     .clean-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05); }
     
-    /* BADGES & SUGERENCIAS */
+    /* BADGES */
     .badge { background: #f3f4f6; color: #4b5563; padding: 4px 10px; border-radius: 20px; font-size: 11px; text-transform: uppercase; font-weight: 800; }
     
     /* BOTONES */
     .stButton > button { background-color: #111827; color: white; border: none; border-radius: 8px; font-weight: 600; width: 100%; padding: 12px; }
     .stButton > button:hover { background-color: #374151; }
     
-    /* CAJA AÑADIR MANUAL */
-    .add-box { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 20px; }
+    /* CAJA AÑADIR MANUAL Y AUTO */
+    .add-box { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 20px; margin-bottom: 15px; }
+    .auto-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 20px; margin-bottom: 15px; }
 
     /* NOTICIAS */
     .news-item { background: #f9fafb; border-left: 4px solid #2563eb; padding: 15px; border-radius: 8px; margin-bottom: 10px; }
@@ -53,40 +54,26 @@ if 'profile' not in st.session_state: st.session_state.profile = None
 if 'onboarding_complete' not in st.session_state: st.session_state.onboarding_complete = False
 if 'search_query' not in st.session_state: st.session_state.search_query = ""
 
-# --- 3. FUNCIONES ---
+# --- 3. FUNCIONES LÓGICAS ---
 
 @st.cache_data(ttl=300)
 def get_ticker_tape():
-    """
-    CORREGIDO: Usamos '5d' en lugar de '1d' para asegurar datos históricos
-    y evitar el error de 'nan'.
-    """
     tickers = ["SPY", "QQQ", "BTC-USD", "GLD", "EURUSD=X"]
     html = ""
     try:
-        # Descargamos 5 días para asegurar que tenemos cierre anterior
         data = yf.download(tickers, period="5d", progress=False)['Close']
-        
         for t in tickers:
             try:
-                # Extraemos la serie de precios y quitamos vacíos
-                series = data[t].dropna()
-                
-                # Si tenemos menos de 2 datos, no podemos calcular cambio
-                if len(series) < 2: continue
-                
-                curr = series.iloc[-1]   # Precio Último
-                prev = series.iloc[-2]   # Precio Cierre Anterior
-                
-                delta = ((curr - prev) / prev) * 100
-                
-                color = "up" if delta >= 0 else "down"
-                sym = "▲" if delta >= 0 else "▼"
-                
+                s = data[t].dropna()
+                if len(s)<2: continue
+                curr = s.iloc[-1]
+                prev = s.iloc[-2]
+                delta = ((curr-prev)/prev)*100
+                color = "up" if delta >=0 else "down"
+                sym = "▲" if delta >=0 else "▼"
                 html += f"<span class='ticker-item'>{t} {curr:.2f} <span class='{color}'>{sym} {delta:.2f}%</span></span>"
             except: continue
-    except: 
-        html = "<span class='ticker-item'>Actualizando mercados...</span>"
+    except: html = "<span class='ticker-item'>Cargando mercados...</span>"
     return html
 
 @st.cache_data(ttl=3600)
@@ -115,6 +102,36 @@ def scan_top_opportunities():
         return df.sort_values(by='Score', ascending=False).head(3)
     except: return pd.DataFrame()
 
+def generate_auto_portfolio(amount, profile):
+    """
+    ROBO-ADVISOR: Genera una cartera modelo según el perfil.
+    Devuelve lista de compras a ejecutar.
+    """
+    allocation = []
+    
+    # ESTRATEGIAS MODELO
+    if "Conservador" in profile:
+        # 60% Bonos, 30% Acciones Globales, 10% Oro
+        allocation = [("BND", 0.60), ("VT", 0.30), ("GLD", 0.10)]
+    elif "Agresivo" in profile:
+        # 50% Tech, 30% S&P500, 20% Emergentes
+        allocation = [("QQQ", 0.50), ("SPY", 0.30), ("VWO", 0.20)]
+    else: # Equilibrado
+        # 50% S&P500, 30% Mundo Desarrollado, 20% Bonos
+        allocation = [("SPY", 0.50), ("VEA", 0.30), ("BND", 0.20)]
+    
+    orders = []
+    for ticker, weight in allocation:
+        budget = amount * weight
+        try:
+            price = yf.Ticker(ticker).fast_info.last_price
+            shares = int(budget / price) # Acciones enteras
+            if shares > 0:
+                orders.append({'Ticker': ticker, 'Shares': shares, 'AvgPrice': price})
+        except: continue
+        
+    return orders
+
 def get_news_rss():
     try:
         d = feedparser.parse("https://es.investing.com/rss/news_25.rss")
@@ -126,7 +143,7 @@ def ai_oracle(portfolio, cash, api_key):
     model = genai.GenerativeModel('gemini-2.0-flash')
     news = [e.title for e in get_news_rss()[:3]]
     ptf_str = str(portfolio) if portfolio else "Cartera Vacía"
-    prompt = f"Analista Financiero Senior. NOTICIAS HOY: {news}. CARTERA: {ptf_str}. LIQUIDEZ: {cash}. Predice 3 escenarios (Corto/Medio/Largo)."
+    prompt = f"Analista Financiero. NOTICIAS: {news}. CARTERA: {ptf_str}. LIQUIDEZ: {cash}. Predice 3 escenarios (Corto/Medio/Largo)."
     return model.generate_content(prompt).text
 
 def ai_audit(portfolio, profile, api_key):
@@ -207,9 +224,11 @@ else:
             elif spy_ret < -2: st.error("VOLÁTIL")
             else: st.warning("NEUTRO")
 
-    # --- TAB 2: MI CARTERA (MEJORADA) ---
+    # --- TAB 2: MI CARTERA (NUEVA FUNCIÓN AUTO) ---
     with tab_port:
         col_view, col_add = st.columns([3, 1])
+        
+        # VISUALIZACIÓN
         with col_view:
             st.subheader("📊 Resumen de Activos")
             if st.session_state.portfolio:
@@ -231,9 +250,33 @@ else:
                 st.dataframe(df_p, use_container_width=True)
                 fig = go.Figure(data=[go.Pie(labels=df_p['Ticker'], values=df_p['Valor Actual'], hole=.4)])
                 st.plotly_chart(fig, use_container_width=True)
-            else: st.info("Tu cartera está vacía. Usa el panel de la derecha para añadir activos.")
+            else: st.info("Cartera vacía. Usa el panel derecho para empezar.")
 
+        # PANEL DERECHO DE ACCIONES
         with col_add:
+            # 1. GENERADOR AUTOMÁTICO (LO QUE PEDISTE)
+            st.markdown('<div class="auto-box">', unsafe_allow_html=True)
+            st.markdown("### ⚡ Generador Automático")
+            st.caption(f"Crea una cartera ideal para perfil **{st.session_state.profile}**.")
+            
+            auto_amt = st.number_input("Cantidad a invertir (€)", 1000, 100000, 5000)
+            
+            if st.button("🤖 Generar Cartera IA", type="primary"):
+                if st.session_state.cash >= auto_amt:
+                    with st.spinner("Diseñando asignación de activos..."):
+                        orders = generate_auto_portfolio(auto_amt, st.session_state.profile)
+                        if orders:
+                            for order in orders:
+                                st.session_state.portfolio.append(order)
+                            st.session_state.cash -= auto_amt
+                            st.toast("Cartera Generada con éxito!", icon="🚀")
+                            time.sleep(1)
+                            st.rerun()
+                        else: st.error("No se pudo generar.")
+                else: st.error("No tienes suficiente saldo ficticio.")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # 2. AÑADIR MANUAL
             st.markdown('<div class="add-box">', unsafe_allow_html=True)
             st.markdown("### ➕ Añadir Manual")
             with st.form("manual_add"):
@@ -243,13 +286,18 @@ else:
                 if st.form_submit_button("Registrar"):
                     st.session_state.portfolio.append({'Ticker': m_ticker, 'Shares': m_qty, 'AvgPrice': m_price})
                     st.rerun()
+            
             st.divider()
-            st.markdown("### 🤖 Auditoría IA")
+            
+            # 3. AUDITORÍA
+            st.markdown("### 🤖 Auditoría")
             api_aud = st.text_input("API Key", type="password", key="aud_key")
             if st.button("Auditar") and api_aud:
                 with st.spinner("Analizando..."): st.info(ai_audit(st.session_state.portfolio, st.session_state.profile, api_aud))
+            
             if st.button("🗑️ Borrar Todo"):
                 st.session_state.portfolio = []
+                st.session_state.cash = 10000.0
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
