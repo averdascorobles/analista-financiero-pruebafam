@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import google.generativeai as genai
 import plotly.graph_objects as go
-import feedparser # <--- LIBRERÍA NUEVA PARA NOTICIAS
+import feedparser
 from datetime import datetime
 
 # --- 1. CONFIGURACIÓN ---
@@ -106,32 +106,69 @@ def load_instructions():
 
 @st.cache_data(ttl=3600)
 def scan_satellites():
+    """Escaneo Matemático con RED DE SEGURIDAD (Validación de Datos)"""
     data = []
     tickers = list(SATELLITE_UNIVERSE.keys())
-    # Descarga optimizada
-    history = yf.download(tickers, period="6mo", progress=False)['Close']
     
-    for ticker in tickers:
-        try:
-            prices = history[ticker]
-            if prices.empty: continue
-            current = prices.iloc[-1]
-            ret_1m = ((current - prices.iloc[-22]) / prices.iloc[-22]) * 100
-            daily_ret = prices.pct_change().dropna()
-            vol = daily_ret.std() * np.sqrt(252) * 100
-            
-            risk = "Equilibrado"
-            if vol < 12: risk = "Conservador"
-            elif vol > 25: risk = "Agresivo"
-            
-            score = ret_1m / vol if vol > 0 else 0
-            
-            data.append({
-                'Ticker': ticker, 'Nombre': SATELLITE_UNIVERSE[ticker],
-                'Precio': current, 'Retorno 1M': ret_1m,
-                'Volatilidad': vol, 'Perfil': risk, 'Score': score
-            })
-        except: continue
+    try:
+        # Descarga masiva
+        history = yf.download(tickers, period="6mo", progress=False)['Close']
+        
+        # FILTRO 1: ¿Ha fallado la descarga masiva?
+        if history.empty:
+            st.error("Error de conexión con Yahoo Finance. Reintentando...")
+            return pd.DataFrame() # Devolvemos vacío para no romper la app
+
+        for ticker in tickers:
+            try:
+                # Extraemos la serie de precios de este ticker concreto
+                # Usamos .dropna() para eliminar días festivos o huecos
+                prices = history[ticker].dropna()
+                
+                # FILTRO 2: ¿Tenemos suficientes datos históricos?
+                # Necesitamos al menos 30 días para calcular medias y volatilidad fiables
+                if len(prices) < 30:
+                    continue # Saltamos este activo, no es fiable
+
+                # FILTRO 3: Validación de Precio Lógico
+                current = prices.iloc[-1]
+                prev_month = prices.iloc[-22] if len(prices) >= 22 else prices.iloc[0]
+                
+                if current <= 0 or prev_month <= 0:
+                    continue # Precio corrupto (cero o negativo), saltamos
+                
+                # --- CÁLCULOS MATEMÁTICOS (Solo si pasan los filtros) ---
+                ret_1m = ((current - prev_month) / prev_month) * 100
+                daily_ret = prices.pct_change().dropna()
+                vol = daily_ret.std() * np.sqrt(252) * 100
+                
+                # Clasificación de Riesgo
+                risk_label = "Equilibrado"
+                if vol < 12: risk_label = "Conservador"
+                elif vol > 25: risk_label = "Agresivo"
+                
+                # Score (Evitamos división por cero)
+                score = ret_1m / vol if vol > 0.1 else 0
+                
+                data.append({
+                    'Ticker': ticker,
+                    'Nombre': SATELLITE_UNIVERSE[ticker],
+                    'Precio': current,
+                    'Retorno 1M': ret_1m,
+                    'Volatilidad': vol,
+                    'Perfil': risk_label,
+                    'Score': score
+                })
+                
+            except Exception as e:
+                # Si falla UN ticker específico, lo ignoramos y seguimos con los demás
+                continue 
+
+    except Exception as e:
+        st.error(f"Error crítico en el escaneo: {e}")
+        return pd.DataFrame()
+        
+    # Devolvemos la lista limpia y ordenada
     return pd.DataFrame(data).sort_values(by='Score', ascending=False)
 
 def get_rss_news():
