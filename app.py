@@ -8,304 +8,334 @@ import feedparser
 from datetime import datetime
 import time
 
-# --- 1. CONFIGURACIÓN VISUAL "TERMINAL PRO" ---
-st.set_page_config(layout="wide", page_title="TERMINAL v1.0", page_icon="📈", initial_sidebar_state="collapsed")
+# --- 1. CONFIGURACIÓN VISUAL "PRO FINTECH" (OSCURO & LIMPIO) ---
+st.set_page_config(layout="wide", page_title="Wealth OS Pro", page_icon="🏛️", initial_sidebar_state="collapsed")
 
-# CSS AGRESIVO PARA CAMBIAR TODO EL LOOK A MODO TERMINAL
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;600;800&family=Roboto+Mono:wght@400;700&display=swap');
     
-    /* FONDO NEGRO PROFUNDO */
+    /* FONDO Y TEXTO GENERAL */
     .stApp {
-        background-color: #0e1117;
+        background-color: #0e1117; /* Negro Profundo */
         color: #e0e0e0;
+        font-family: 'Manrope', sans-serif;
     }
     
-    /* TIPOGRAFÍA TÉCNICA */
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
-    .mono {
-        font-family: 'Roboto Mono', monospace;
-    }
-    
-    /* TICKER TAPE (CINTA DE COTIZACIONES) */
+    /* TICKER TAPE (CINTA) */
     .ticker-wrap {
-        width: 100%;
-        overflow: hidden;
-        background-color: #161b22;
-        border-bottom: 1px solid #30363d;
-        white-space: nowrap;
-        padding: 8px 0;
-        margin-bottom: 20px;
-    }
-    .ticker {
-        display: inline-block;
-        animation: marquee 30s linear infinite;
-    }
-    @keyframes marquee {
-        0% { transform: translateX(100%); }
-        100% { transform: translateX(-100%); }
+        width: 100%; overflow: hidden; background-color: #161b22;
+        border-bottom: 1px solid #30363d; white-space: nowrap; padding: 10px 0;
     }
     .ticker-item {
-        display: inline-block;
-        padding: 0 20px;
-        font-family: 'Roboto Mono', monospace;
-        font-weight: bold;
-        font-size: 14px;
+        display: inline-block; padding: 0 20px; font-family: 'Roboto Mono', monospace;
+        font-weight: bold; font-size: 14px; color: #8b949e;
     }
-    .up { color: #00ff41; }
-    .down { color: #ff3b30; }
+    .up { color: #3fb950; } .down { color: #f85149; }
 
-    /* TARJETAS ESTILO BLOOMBERG */
-    .terminal-card {
+    /* TARJETAS (CARDS) */
+    .pro-card {
         background-color: #161b22;
         border: 1px solid #30363d;
-        border-radius: 4px; /* Bordes más rectos */
+        border-radius: 12px;
         padding: 20px;
-        margin-bottom: 15px;
+        margin-bottom: 20px;
+        transition: transform 0.2s;
     }
-    .terminal-header {
-        border-bottom: 1px solid #30363d;
-        padding-bottom: 10px;
-        margin-bottom: 15px;
-        color: #8b949e;
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
+    .pro-card:hover { border-color: #58a6ff; transform: translateY(-2px); }
     
-    /* METRICAS NEÓN */
-    .big-number {
+    /* BADGES */
+    .risk-badge {
+        background: #21262d; color: #8b949e; padding: 4px 8px;
+        border-radius: 4px; font-size: 11px; text-transform: uppercase; font-weight: bold;
         font-family: 'Roboto Mono', monospace;
-        font-size: 28px;
-        font-weight: 700;
-        color: #ffffff;
     }
-    .highlight-orange { color: #ff9900; } /* Bloomberg Orange */
     
-    /* NOTICIAS TELETYPE */
-    .news-item {
-        border-left: 2px solid #ff9900;
-        padding-left: 10px;
-        margin-bottom: 12px;
-        font-family: 'Roboto Mono', monospace;
-        font-size: 13px;
-    }
-    .news-time { color: #ff9900; font-weight: bold; margin-right: 5px; }
+    /* TOP 3 HIGHLIGHT */
+    .top-score { font-size: 28px; font-weight: 800; font-family: 'Roboto Mono'; }
     
-    /* BOTONES INDUSTRIALES */
+    /* BOTONES */
     .stButton > button {
-        background-color: #21262d;
-        color: #58a6ff;
-        border: 1px solid #30363d;
-        border-radius: 4px;
-        font-family: 'Roboto Mono', monospace;
-        font-weight: bold;
-        text-transform: uppercase;
-        transition: all 0.2s;
+        background-color: #238636; /* Verde GitHub */
+        color: white; border: none; border-radius: 6px; font-weight: 600;
+        width: 100%; padding: 10px;
     }
-    .stButton > button:hover {
-        background-color: #30363d;
-        border-color: #8b949e;
+    .stButton > button:hover { background-color: #2ea043; }
+    
+    /* NOTICIAS */
+    .news-item {
+        border-left: 3px solid #f78166; padding-left: 15px; margin-bottom: 15px;
+    }
+    .news-title { color: #e0e0e0; font-weight: 600; text-decoration: none; font-size: 15px; }
+    .news-meta { color: #8b949e; font-size: 11px; text-transform: uppercase; margin-top: 4px; }
+    
+    /* ONBOARDING */
+    .onboarding-box {
+        background: #161b22; padding: 40px; border-radius: 20px;
+        border: 1px solid #30363d; max-width: 600px; margin: 0 auto; text-align: center;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. LÓGICA DE NEGOCIO (IGUAL DE POTENTE) ---
-
-# Tickers Clave para la cinta
-TICKER_TAPE_LIST = ["SPY", "QQQ", "GLD", "BTC-USD", "EURUSD=X", "VWO", "BND"]
-
-ETF_UNIVERSE = {
-    'SPY': {'Nombre': 'S&P 500 MARKET', 'Desc': 'US LARGE CAP BLEND'},
-    'QQQ': {'Nombre': 'NASDAQ 100', 'Desc': 'US TECH / GROWTH'},
-    'GLD': {'Nombre': 'GOLD BULLION', 'Desc': 'COMMODITY / HEDGE'},
-    'VWO': {'Nombre': 'EMERGING MKTS', 'Desc': 'HIGH RISK / GROWTH'},
-    'VEA': {'Nombre': 'DEVELOPED MKTS', 'Desc': 'EX-US EQUITY'},
-    'BND': {'Nombre': 'TOTAL BOND MKT', 'Desc': 'FIXED INCOME'},
-    'XLE': {'Nombre': 'ENERGY SELECT', 'Desc': 'OIL & GAS SECTOR'},
-    'XLV': {'Nombre': 'HEALTH CARE', 'Desc': 'PHARMA / BIOTECH'}
-}
-
+# --- 2. GESTIÓN DE ESTADO ---
 if 'portfolio' not in st.session_state: st.session_state.portfolio = []
 if 'cash' not in st.session_state: st.session_state.cash = 10000.0
+if 'profile' not in st.session_state: st.session_state.profile = None
+if 'onboarding_complete' not in st.session_state: st.session_state.onboarding_complete = False
 
-@st.cache_data(ttl=300) # Cache 5 min
-def get_ticker_tape_data():
-    """Datos rápidos para la cinta de arriba"""
-    data_str = ""
+# --- 3. FUNCIONES DE DATOS ---
+
+@st.cache_data(ttl=300)
+def get_ticker_tape():
+    tickers = ["SPY", "QQQ", "BTC-USD", "GLD", "EURUSD=X"]
+    html = ""
     try:
-        tickers = yf.download(TICKER_TAPE_LIST, period="1d", progress=False)['Close']
-        for t in TICKER_TAPE_LIST:
-            try:
-                price = tickers[t].iloc[-1]
-                prev = tickers[t].iloc[0] # Apertura aprox
-                delta = ((price - prev)/prev)*100
-                color_class = "up" if delta >= 0 else "down"
-                symbol = "▲" if delta >= 0 else "▼"
-                data_str += f"<span class='ticker-item'>{t} {price:.2f} <span class='{color_class}'>{symbol} {delta:.2f}%</span></span>"
-            except: continue
-    except: 
-        data_str = "<span class='ticker-item'>SYSTEM_OFFLINE_RETRYING...</span>"
-    return data_str
+        data = yf.download(tickers, period="1d", progress=False)['Close']
+        for t in tickers:
+            curr = data[t].iloc[-1]
+            prev = data[t].iloc[0]
+            delta = ((curr-prev)/prev)*100
+            color = "up" if delta >=0 else "down"
+            sym = "▲" if delta >=0 else "▼"
+            html += f"<span class='ticker-item'>{t} {curr:.2f} <span class='{color}'>{sym} {delta:.2f}%</span></span>"
+    except: html = "MARKET DATA OFFLINE"
+    return html
 
 @st.cache_data(ttl=3600)
-def analyze_market_system():
-    """Análisis Técnico de Mercado"""
-    try:
-        spy = yf.Ticker("SPY")
-        hist = spy.history(period="6mo")
-        current = hist['Close'].iloc[-1]
-        ma_200 = hist['Close'].mean() 
-        daily_ret = hist['Close'].pct_change()
-        vol = daily_ret.std() * np.sqrt(252) * 100
-        
-        status = "BULLISH" if current > ma_200 else "BEARISH"
-        risk = "HIGH" if vol > 20 else "NORMAL"
-        return status, risk, vol
-    except: return "N/A", "N/A", 0
-
-@st.cache_data(ttl=3600)
-def scan_opportunities():
+def scan_top_opportunities():
+    # Universo de ETFs seguros para novatos
+    UNIVERSE = {
+        'SPY': 'S&P 500', 'QQQ': 'Nasdaq 100', 'GLD': 'Oro', 
+        'VWO': 'Emergentes', 'BND': 'Bonos', 'XLE': 'Energía'
+    }
     data = []
-    tickers = list(ETF_UNIVERSE.keys())
     try:
-        history = yf.download(tickers, period="3mo", progress=False)['Close']
-        for ticker in tickers:
+        hist = yf.download(list(UNIVERSE.keys()), period="3mo", progress=False)['Close']
+        for t in UNIVERSE:
             try:
-                prices = history[ticker].dropna()
+                prices = hist[t].dropna()
                 if len(prices) < 20: continue
                 curr = prices.iloc[-1]
                 prev = prices.iloc[-22]
-                ret_1m = ((curr - prev) / prev) * 100
-                vol = prices.pct_change().std() * np.sqrt(252) * 100
-                score = ret_1m / (vol if vol > 0 else 1)
+                ret = ((curr-prev)/prev)*100
+                vol = prices.pct_change().std() * np.sqrt(252)*100
+                score = ret / (vol if vol > 0 else 1)
                 
-                # Generar señal técnica
-                signal = "BUY" if ret_1m > 2 else "HOLD" if ret_1m > -2 else "SELL"
+                # Consejo automático
+                advice = "MOMENTUM ALCISTA" if ret > 3 else "ESTABLE/REFUGIO" if vol < 10 else "ALTA VOLATILIDAD"
                 
-                data.append({'Ticker': ticker, 'Info': ETF_UNIVERSE[ticker], 'Price': curr, 'Ret': ret_1m, 'Vol': vol, 'Score': score, 'Signal': signal})
+                data.append({'Ticker': t, 'Name': UNIVERSE[t], 'Price': curr, 'Ret': ret, 'Vol': vol, 'Score': score, 'Advice': advice})
             except: continue
         return pd.DataFrame(data).sort_values(by='Score', ascending=False).head(3)
     except: return pd.DataFrame()
 
-def get_terminal_news():
+def get_news_rss():
     try:
-        rss_url = "https://es.investing.com/rss/news_25.rss"
-        feed = feedparser.parse(rss_url)
-        return feed.entries[:6]
+        d = feedparser.parse("https://es.investing.com/rss/news_25.rss")
+        return d.entries[:5]
     except: return []
 
-# --- 3. INTERFAZ TIPO TERMINAL ---
-
-# 1. CINTA DE COTIZACIONES (HEADER)
-tape_html = get_ticker_tape_data()
-st.markdown(f"""
-<div class="ticker-wrap">
-    <div class="ticker">
-        {tape_html} {tape_html} </div>
-</div>
-""", unsafe_allow_html=True)
-
-# 2. STATUS BAR (DATOS MACRO)
-m_status, m_risk, m_vol = analyze_market_system()
-col_sys1, col_sys2, col_sys3, col_sys4 = st.columns(4)
-
-with col_sys1:
-    st.markdown(f"""<div style="font-family:'Roboto Mono'; font-size:12px; color:#888;">SYSTEM DATE</div><div style="color:white; font-weight:bold;">{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>""", unsafe_allow_html=True)
-with col_sys2:
-    color = "#00ff41" if m_status == "BULLISH" else "#ff3b30"
-    st.markdown(f"""<div style="font-family:'Roboto Mono'; font-size:12px; color:#888;">MARKET TREND</div><div style="color:{color}; font-weight:bold;">● {m_status}</div>""", unsafe_allow_html=True)
-with col_sys3:
-    color = "#ff9900" if m_risk == "HIGH" else "#00ff41"
-    st.markdown(f"""<div style="font-family:'Roboto Mono'; font-size:12px; color:#888;">VOLATILITY IDX</div><div style="color:{color}; font-weight:bold;">{m_vol:.2f}% ({m_risk})</div>""", unsafe_allow_html=True)
-with col_sys4:
-    st.markdown(f"""<div style="font-family:'Roboto Mono'; font-size:12px; color:#888;">USER SESSION</div><div style="color:#58a6ff; font-weight:bold;">GUEST_ADMIN</div>""", unsafe_allow_html=True)
-
-st.markdown("---")
-
-# 3. CUERPO PRINCIPAL (GRID)
-col_main, col_news = st.columns([2, 1])
-
-with col_main:
-    st.markdown("### ⚡ ALGORITHMIC OPPORTUNITIES (TOP 3)")
+def ai_oracle(portfolio, cash, api_key):
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-2.0-flash')
     
-    top_df = scan_opportunities()
+    # Contexto real
+    news = [e.title for e in get_news_rss()[:3]]
+    ptf_str = str(portfolio) if portfolio else "Sin inversiones"
     
-    if not top_df.empty:
-        for idx, row in top_df.iterrows():
-            # Color lógico para terminal
-            signal_color = "#00ff41" if row['Signal'] == "BUY" else "#ff9900"
-            ret_color = "up" if row['Ret'] >= 0 else "down"
-            ret_sym = "+" if row['Ret'] >= 0 else ""
+    prompt = f"""
+    Actúa como un Analista de Riesgos Senior (Stress Test).
+    NOTICIAS DE HOY: {news}
+    CARTERA USUARIO: {ptf_str}
+    LIQUIDEZ: {cash}
+    
+    Genera 3 escenarios (Corto, Medio, Largo Plazo) en formato Markdown.
+    Sé serio y realista.
+    """
+    return model.generate_content(prompt).text
+
+def ai_audit(portfolio, profile, api_key):
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-2.0-flash')
+    return model.generate_content(f"Audita esta cartera: {portfolio} para un perfil {profile}. Sé crítico.").text
+
+# --- 4. FLUJO DE APLICACIÓN ---
+
+# === FASE 1: ONBOARDING (TEST INICIAL) ===
+if not st.session_state.onboarding_complete:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    with st.container():
+        st.markdown(f"""
+        <div class="onboarding-box">
+            <h1>🏛️ Wealth OS Setup</h1>
+            <p style="color:#8b949e;">Configurando terminal para nuevo inversor.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Preguntas simples
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            st.markdown("### 1. Horizonte Temporal")
+            horizon = st.select_slider("", ["Corto Plazo (<2 años)", "Medio (5 años)", "Largo (>10 años)"])
             
-            st.markdown(f"""
-            <div class="terminal-card">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <span class="big-number highlight-orange">{row['Ticker']}</span>
-                        <span style="font-family:'Roboto Mono'; color:#8b949e; margin-left:10px;">{row['Info']['Nombre']}</span>
-                    </div>
-                    <div style="text-align:right;">
-                        <div class="big-number {ret_color}">{ret_sym}{row['Ret']:.2f}%</div>
-                        <div style="font-size:11px; color:#888;">1M MOMENTUM</div>
-                    </div>
-                </div>
-                <div style="margin-top:10px; display:flex; justify-content:space-between; border-top:1px solid #30363d; padding-top:10px;">
-                    <div style="font-family:'Roboto Mono'; font-size:12px; color:#8b949e;">
-                        VOL: {row['Vol']:.2f}% | SCORE: {row['Score']:.2f}
-                    </div>
-                    <div style="font-family:'Roboto Mono'; font-weight:bold; color:{signal_color}; border:1px solid {signal_color}; padding:2px 8px; border-radius:2px;">
-                        SIGNAL: {row['Signal']}
-                    </div>
-                </div>
-                <div style="margin-top:10px; font-size:12px; color:#ccc;">
-                    Strategy: {row['Info']['Desc']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown("### 2. Reacción ante caídas (-15%)")
+            panic = st.radio("", ["Vendo todo (Stop Loss)", "Mantengo la calma", "Compro más (Oportunidad)"])
             
-            # Botón de acción integrado en el flujo
-            c1, c2 = st.columns([1, 4])
-            with c1:
-                if st.button(f"EXECUTE {row['Ticker']}", key=row['Ticker']):
-                    st.toast(f"ORDER SENT: BUY {row['Ticker']} @ MKT PRICE", icon="✅")
-                    # Lógica de cartera ficticia aquí
-    else:
-        st.info("INITIALIZING DATA FEEDS... PLEASE WAIT.")
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("INICIAR SISTEMA"):
+                score = 1 if "Vendo" in panic else 2 if "Mantengo" in panic else 3
+                if "Largo" in horizon: score += 1
+                
+                st.session_state.profile = "Conservador 🛡️" if score <= 2 else "Equilibrado ⚖️" if score <= 3 else "Agresivo 🔥"
+                st.session_state.onboarding_complete = True
+                st.rerun()
 
-with col_news:
-    st.markdown("### 📰 NEWS WIRE (REAL-TIME)")
-    st.markdown("<div class='terminal-card'>", unsafe_allow_html=True)
+# === FASE 2: PLATAFORMA PRINCIPAL ===
+else:
+    # HEADER: CINTA DE COTIZACIONES
+    tape = get_ticker_tape()
+    st.markdown(f"""
+    <div class="ticker-wrap">
+        <div style="display:inline-block; animation:marquee 30s linear infinite;">
+            {tape} {tape} {tape}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("""
+    <style>
+    @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # BARRA SUPERIOR
+    c1, c2, c3 = st.columns([3, 1, 1])
+    with c1: st.title("Wealth OS Pro")
+    with c2: st.metric("Perfil", st.session_state.profile)
+    with c3: st.metric("Liquidez (Sim)", f"{st.session_state.cash:,.0f} €")
     
-    news = get_terminal_news()
-    if news:
-        for n in news:
-            time_str = datetime(*n.published_parsed[:6]).strftime('%H:%M')
-            st.markdown(f"""
-            <div class="news-item">
-                <span class="news-time">[{time_str}]</span>
-                <a href="{n.link}" target="_blank" style="color:#e0e0e0; text-decoration:none;">{n.title}</a>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.write("NO SIGNAL.")
-    st.markdown("</div>", unsafe_allow_html=True)
+    # NAVEGACIÓN
+    tab_market, tab_port, tab_search, tab_oracle = st.tabs(["📊 Mercado Hoy", "💼 Mi Cartera", "🔎 Explorador", "🔮 El Oráculo"])
 
-    # Mini Calculadora Rápida en Sidebar
-    st.markdown("### 🧮 QUICK CALC")
-    with st.container(border=True):
-        inv = st.number_input("CAPITAL", value=10000, label_visibility="collapsed")
-        st.caption("EST. ANNUAL YIELD (7%)")
-        res = inv * 1.07
-        st.markdown(f"<div class='big-number'>{res:,.0f} €</div>", unsafe_allow_html=True)
+    # --- PESTAÑA 1: DASHBOARD (LO QUE PIDES: TOP 3 + NOTICIAS) ---
+    with tab_market:
+        st.markdown("### ⚡ Oportunidades del Día (Algoritmo)")
+        
+        top_df = scan_top_opportunities()
+        if not top_df.empty:
+            cols = st.columns(3)
+            for idx, row in top_df.iterrows():
+                color = "#3fb950" if row['Ret'] > 0 else "#f85149"
+                with cols[idx]:
+                    st.markdown(f"""
+                    <div class="pro-card">
+                        <div style="display:flex; justify-content:space-between;">
+                            <span style="font-size:20px; font-weight:bold;">{row['Ticker']}</span>
+                            <span class="risk-badge">{row['Name']}</span>
+                        </div>
+                        <div class="top-score" style="color:{color}">{row['Ret']:.2f}%</div>
+                        <div style="font-size:12px; color:#8b949e;">Momentum (1 Mes)</div>
+                        <hr style="border-color:#30363d;">
+                        <div style="font-size:13px; color:#e0e0e0;">💡 {row['Advice']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if st.button(f"Simular Compra {row['Ticker']}", key=row['Ticker']):
+                        if st.session_state.cash >= row['Price']:
+                            st.session_state.portfolio.append({'Ticker': row['Ticker'], 'Shares': 1, 'AvgPrice': row['Price']})
+                            st.session_state.cash -= row['Price']
+                            st.toast(f"Orden Ejecutada: {row['Ticker']}", icon="✅")
+                            time.sleep(1)
+                            st.rerun()
+                        else: st.error("Saldo insuficiente")
+        
+        st.markdown("---")
+        c_news, c_mood = st.columns([2, 1])
+        
+        with c_news:
+            st.markdown("### 📰 Noticias Relevantes (Investing.com)")
+            news = get_news_rss()
+            if news:
+                for n in news:
+                    st.markdown(f"""
+                    <div class="news-item">
+                        <a href="{n.link}" target="_blank" class="news-title">{n.title}</a>
+                        <div class="news-meta">FUENTE: INVESTING.COM • {datetime.now().strftime('%H:%M')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else: st.info("Sin noticias recientes.")
+            
+        with c_mood:
+            st.markdown("### 🛡️ Estado del Mercado")
+            # Lógica simple de semáforo
+            spy_ret = top_df.iloc[0]['Ret'] if not top_df.empty else 0
+            if spy_ret > 2:
+                st.success("MERCADO ALCISTA: Las condiciones son favorables para la inversión.")
+            elif spy_ret < -2:
+                st.error("ALTA VOLATILIDAD: Se recomienda precaución extrema.")
+            else:
+                st.warning("MERCADO LATERAL: Buscar oportunidades selectivas.")
 
-# 4. FOOTER TÉCNICO
-st.markdown("---")
-st.markdown("""
-<div style="text-align:center; font-family:'Roboto Mono'; font-size:10px; color:#555;">
-    TERMINAL ID: W-OS-9921 • LATENCY: 24ms • DATA SOURCE: YFINANCE/RSS • SECURE CONNECTION
-</div>
-""", unsafe_allow_html=True)
+    # --- PESTAÑA 2: SIMULADOR DE CARTERA ---
+    with tab_port:
+        c1, c2 = st.columns([2,1])
+        with c1:
+            st.markdown("### Tus Posiciones")
+            if st.session_state.portfolio:
+                df_p = pd.DataFrame(st.session_state.portfolio)
+                # Cálculo de valor actual
+                current_vals = []
+                for p in st.session_state.portfolio:
+                    try: 
+                        curr = yf.Ticker(p['Ticker']).fast_info.last_price
+                        current_vals.append(curr * p['Shares'])
+                    except: current_vals.append(p['AvgPrice'] * p['Shares'])
+                
+                df_p['Valor Actual'] = current_vals
+                st.dataframe(df_p, use_container_width=True)
+                
+                # Gráfico
+                fig = go.Figure(data=[go.Pie(labels=df_p['Ticker'], values=df_p['Valor Actual'], hole=.3)])
+                fig.update_layout(paper_bgcolor="#0e1117", font={'color': "white"})
+                st.plotly_chart(fig, use_container_width=True)
+            else: st.info("Cartera vacía. Ve al Mercado para comprar.")
+            
+        with c2:
+            st.markdown("### Auditoría IA")
+            api = st.text_input("API Key (Para Auditoría)", type="password")
+            if st.button("Analizar Riesgos") and api:
+                with st.spinner("Auditando..."):
+                    res = ai_audit(st.session_state.portfolio, st.session_state.profile, api)
+                    st.info(res)
+            
+            if st.button("🔴 Reiniciar Cartera"):
+                st.session_state.portfolio = []
+                st.session_state.cash = 10000.0
+                st.rerun()
+
+    # --- PESTAÑA 3: EXPLORADOR (BUSCADOR) ---
+    with tab_search:
+        st.markdown("### 🔎 Analizador de Activos")
+        search = st.text_input("Ticker (Ej: TSLA, AAPL, SPY)", "").upper()
+        if search:
+            try:
+                stock = yf.Ticker(search)
+                info = stock.info
+                st.metric(f"{info.get('shortName')}", f"{info.get('currentPrice')} {info.get('currency')}")
+                st.line_chart(stock.history(period="1y")['Close'])
+                st.write(info.get('longBusinessSummary'))
+            except: st.error("Activo no encontrado")
+
+    # --- PESTAÑA 4: EL ORÁCULO (PREDICCIONES) ---
+    with tab_oracle:
+        st.markdown("### 🔮 Simulador de Escenarios")
+        st.caption("Proyección basada en noticias en tiempo real.")
+        
+        col_o1, col_o2 = st.columns([1, 2])
+        with col_o1:
+            api_oracle = st.text_input("API Key (Google)", type="password", key="oracle_key")
+            if st.button("Ejecutar Simulación"):
+                if not api_oracle: st.error("Falta API Key")
+                else:
+                    with st.spinner("Leyendo noticias y proyectando..."):
+                        with col_o2:
+                            res = ai_oracle(st.session_state.portfolio, st.session_state.cash, api_oracle)
+                            st.markdown(res)
