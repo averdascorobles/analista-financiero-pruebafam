@@ -305,4 +305,23 @@ else:
                     if st.button(f"➕ Añadir {search} a Cartera", type="primary"):
                         curr_p = info.get('currentPrice', 0)
                         if st.session_state.cash >= curr_p:
-                            st.
+                            st.session_state.portfolio.append({'Ticker': search, 'Shares': 1, 'AvgPrice': curr_p})
+                            st.session_state.cash -= curr_p
+                            st.toast(f"{search} añadido!", icon="🛍️")
+                        else: st.error("Falta saldo")
+                        
+                with col_chart:
+                    st.line_chart(stock.history(period="1y")['Close'])
+                    with st.expander("Ver descripción"):
+                        st.write(info.get('longBusinessSummary'))
+
+            except: st.error("Activo no encontrado.")
+
+    # --- TAB 4: ORÁCULO ---
+    with tab_oracle:
+        st.subheader("🔮 Predicción de Escenarios")
+        api_oracle = st.text_input("API Key (Google)", type="password", key="oracle")
+        if st.button("Simular Futuro") and api_oracle:
+            with st.spinner("Consultando oráculo..."):
+                res = ai_oracle(st.session_state.portfolio, st.session_state.cash, api_oracle)
+                st.markdown(res)
