@@ -28,19 +28,12 @@ st.markdown("""
     
     /* BADGES & SUGERENCIAS */
     .badge { background: #f3f4f6; color: #4b5563; padding: 4px 10px; border-radius: 20px; font-size: 11px; text-transform: uppercase; font-weight: 800; }
-    .suggestion-btn {
-        background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px; 
-        text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 10px;
-    }
-    .suggestion-btn:hover { border-color: #2563eb; background: #eff6ff; }
-    .sug-ticker { font-weight: 800; font-size: 14px; display: block; }
-    .sug-name { font-size: 11px; color: #6b7280; }
-
+    
     /* BOTONES */
     .stButton > button { background-color: #111827; color: white; border: none; border-radius: 8px; font-weight: 600; width: 100%; padding: 12px; }
     .stButton > button:hover { background-color: #374151; }
     
-    /* ADD BOX */
+    /* CAJA AÑADIR MANUAL */
     .add-box { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 20px; }
 
     /* NOTICIAS */
@@ -58,27 +51,42 @@ if 'portfolio' not in st.session_state: st.session_state.portfolio = []
 if 'cash' not in st.session_state: st.session_state.cash = 10000.0
 if 'profile' not in st.session_state: st.session_state.profile = None
 if 'onboarding_complete' not in st.session_state: st.session_state.onboarding_complete = False
-# Nuevo: para guardar la búsqueda cuando haces clic en sugerencias
 if 'search_query' not in st.session_state: st.session_state.search_query = ""
 
 # --- 3. FUNCIONES ---
 
 @st.cache_data(ttl=300)
 def get_ticker_tape():
+    """
+    CORREGIDO: Usamos '5d' en lugar de '1d' para asegurar datos históricos
+    y evitar el error de 'nan'.
+    """
     tickers = ["SPY", "QQQ", "BTC-USD", "GLD", "EURUSD=X"]
     html = ""
     try:
-        data = yf.download(tickers, period="1d", progress=False)['Close']
+        # Descargamos 5 días para asegurar que tenemos cierre anterior
+        data = yf.download(tickers, period="5d", progress=False)['Close']
+        
         for t in tickers:
             try:
-                curr = data[t].iloc[-1]
-                prev = data[t].iloc[0]
-                delta = ((curr-prev)/prev)*100
-                color = "up" if delta >=0 else "down"
-                sym = "▲" if delta >=0 else "▼"
+                # Extraemos la serie de precios y quitamos vacíos
+                series = data[t].dropna()
+                
+                # Si tenemos menos de 2 datos, no podemos calcular cambio
+                if len(series) < 2: continue
+                
+                curr = series.iloc[-1]   # Precio Último
+                prev = series.iloc[-2]   # Precio Cierre Anterior
+                
+                delta = ((curr - prev) / prev) * 100
+                
+                color = "up" if delta >= 0 else "down"
+                sym = "▲" if delta >= 0 else "▼"
+                
                 html += f"<span class='ticker-item'>{t} {curr:.2f} <span class='{color}'>{sym} {delta:.2f}%</span></span>"
             except: continue
-    except: html = "<span class='ticker-item'>Conectando mercados...</span>"
+    except: 
+        html = "<span class='ticker-item'>Actualizando mercados...</span>"
     return html
 
 @st.cache_data(ttl=3600)
@@ -202,8 +210,6 @@ else:
     # --- TAB 2: MI CARTERA (MEJORADA) ---
     with tab_port:
         col_view, col_add = st.columns([3, 1])
-        
-        # IZQUIERDA: VISUALIZACIÓN
         with col_view:
             st.subheader("📊 Resumen de Activos")
             if st.session_state.portfolio:
@@ -215,7 +221,6 @@ else:
                     vals.append(curr * p['Shares'])
                 df_p['Valor Actual'] = vals
                 
-                # KPIs
                 k1, k2, k3 = st.columns(3)
                 total_val = sum(vals)
                 pnl = total_val - sum([p['Shares']*p['AvgPrice'] for p in st.session_state.portfolio])
@@ -226,54 +231,32 @@ else:
                 st.dataframe(df_p, use_container_width=True)
                 fig = go.Figure(data=[go.Pie(labels=df_p['Ticker'], values=df_p['Valor Actual'], hole=.4)])
                 st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Tu cartera está vacía. Usa el panel de la derecha para añadir activos manualmente.")
+            else: st.info("Tu cartera está vacía. Usa el panel de la derecha para añadir activos.")
 
-        # DERECHA: AÑADIR MANUAL (LO QUE PEDISTE)
         with col_add:
             st.markdown('<div class="add-box">', unsafe_allow_html=True)
             st.markdown("### ➕ Añadir Manual")
-            st.caption("Si ya compraste algo en tu banco, regístralo aquí.")
-            
             with st.form("manual_add"):
-                m_ticker = st.text_input("Ticker (Ej: VOO, SAN.MC)").upper()
+                m_ticker = st.text_input("Ticker (Ej: VOO)").upper()
                 m_qty = st.number_input("Cantidad", 1, 10000, 1)
-                m_price = st.number_input("Precio de Compra (€)", 0.0, 100000.0, 100.0)
-                
-                if st.form_submit_button("Registrar Operación"):
+                m_price = st.number_input("Precio (€)", 0.0, 100000.0, 100.0)
+                if st.form_submit_button("Registrar"):
                     st.session_state.portfolio.append({'Ticker': m_ticker, 'Shares': m_qty, 'AvgPrice': m_price})
-                    st.toast(f"{m_ticker} añadido manualmente!", icon="📝")
                     st.rerun()
-            
             st.divider()
-            
             st.markdown("### 🤖 Auditoría IA")
             api_aud = st.text_input("API Key", type="password", key="aud_key")
-            if st.button("Auditar Riesgo") and api_aud:
-                with st.spinner("Analizando..."):
-                    st.info(ai_audit(st.session_state.portfolio, st.session_state.profile, api_aud))
-            
+            if st.button("Auditar") and api_aud:
+                with st.spinner("Analizando..."): st.info(ai_audit(st.session_state.portfolio, st.session_state.profile, api_aud))
             if st.button("🗑️ Borrar Todo"):
                 st.session_state.portfolio = []
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- TAB 3: EXPLORADOR (MEJORADO CON SUGERENCIAS) ---
+    # --- TAB 3: EXPLORADOR ---
     with tab_search:
-        st.subheader("🔎 Explorador de Mercado")
-        
-        # SUGERENCIAS RÁPIDAS (CHIPS)
-        st.caption("¿No sabes qué buscar? Prueba estos:")
-        c1, c2, c3, c4 = st.columns(4)
-        suggestions = {
-            "Principales": ["SPY", "QQQ", "DIA"],
-            "Dividendos": ["VIG", "SCHD", "VYM"],
-            "Global": ["VT", "ACWI", "VEA"],
-            "Sectorial": ["XLK", "XLE", "XLV"]
-        }
-        
-        # Lógica de Botones de Sugerencia
-        # Usamos columnas para simular "Chips"
+        st.subheader("🔎 Explorador")
+        st.caption("Sugerencias:")
         col_sugs = st.columns(6)
         sug_list = [("S&P 500", "SPY"), ("Tecnología", "QQQ"), ("Mundo", "VT"), ("Oro", "GLD"), ("Bonos", "BND"), ("Dividendos", "VIG")]
         
@@ -281,47 +264,26 @@ else:
             with col_sugs[i]:
                 if st.button(label, use_container_width=True):
                     st.session_state.search_query = ticker_sug
+                    st.rerun()
         
-        # BARRA DE BÚSQUEDA
-        search = st.text_input("Escribe el Ticker:", value=st.session_state.search_query).upper()
-        
+        search = st.text_input("Escribe Ticker:", value=st.session_state.search_query).upper()
         if search:
             try:
                 stock = yf.Ticker(search)
                 info = stock.info
-                
-                # LAYOUT DE RESULTADO
                 col_inf, col_chart = st.columns([1, 2])
-                
                 with col_inf:
                     st.markdown(f"## {search}")
-                    st.caption(info.get('shortName'))
                     st.metric("Precio", f"{info.get('currentPrice')} {info.get('currency')}")
-                    st.markdown(f"**Sector:** {info.get('sector')}")
-                    st.markdown(f"**Beta (Riesgo):** {info.get('beta')}")
-                    
-                    st.markdown("---")
-                    # BOTÓN DE AÑADIR DIRECTO DESDE BUSCADOR
-                    if st.button(f"➕ Añadir {search} a Cartera", type="primary"):
-                        curr_p = info.get('currentPrice', 0)
-                        if st.session_state.cash >= curr_p:
-                            st.session_state.portfolio.append({'Ticker': search, 'Shares': 1, 'AvgPrice': curr_p})
-                            st.session_state.cash -= curr_p
-                            st.toast(f"{search} añadido!", icon="🛍️")
-                        else: st.error("Falta saldo")
-                        
-                with col_chart:
-                    st.line_chart(stock.history(period="1y")['Close'])
-                    with st.expander("Ver descripción"):
-                        st.write(info.get('longBusinessSummary'))
-
-            except: st.error("Activo no encontrado.")
+                    if st.button(f"➕ Añadir {search}"):
+                        st.session_state.portfolio.append({'Ticker': search, 'Shares': 1, 'AvgPrice': info.get('currentPrice', 0)})
+                        st.toast("Añadido!")
+                with col_chart: st.line_chart(stock.history(period="1y")['Close'])
+            except: st.error("No encontrado")
 
     # --- TAB 4: ORÁCULO ---
     with tab_oracle:
-        st.subheader("🔮 Predicción de Escenarios")
-        api_oracle = st.text_input("API Key (Google)", type="password", key="oracle")
-        if st.button("Simular Futuro") and api_oracle:
-            with st.spinner("Consultando oráculo..."):
-                res = ai_oracle(st.session_state.portfolio, st.session_state.cash, api_oracle)
-                st.markdown(res)
+        st.subheader("🔮 Predicción")
+        api_oracle = st.text_input("API Key", type="password", key="oracle")
+        if st.button("Simular") and api_oracle:
+            with st.spinner("Consultando..."): st.markdown(ai_oracle(st.session_state.portfolio, st.session_state.cash, api_oracle))
