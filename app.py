@@ -33,7 +33,7 @@ st.markdown("""
     .stButton > button { background-color: #111827; color: white; border: none; border-radius: 8px; font-weight: 600; width: 100%; padding: 12px; }
     .stButton > button:hover { background-color: #374151; }
     
-    /* CAJA AÑADIR MANUAL Y AUTO */
+    /* CAJAS */
     .add-box { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 20px; margin-bottom: 15px; }
     .auto-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 20px; margin-bottom: 15px; }
 
@@ -103,21 +103,12 @@ def scan_top_opportunities():
     except: return pd.DataFrame()
 
 def generate_auto_portfolio(amount, profile):
-    """
-    ROBO-ADVISOR: Genera una cartera modelo según el perfil.
-    Devuelve lista de compras a ejecutar.
-    """
     allocation = []
-    
-    # ESTRATEGIAS MODELO
     if "Conservador" in profile:
-        # 60% Bonos, 30% Acciones Globales, 10% Oro
         allocation = [("BND", 0.60), ("VT", 0.30), ("GLD", 0.10)]
     elif "Agresivo" in profile:
-        # 50% Tech, 30% S&P500, 20% Emergentes
         allocation = [("QQQ", 0.50), ("SPY", 0.30), ("VWO", 0.20)]
     else: # Equilibrado
-        # 50% S&P500, 30% Mundo Desarrollado, 20% Bonos
         allocation = [("SPY", 0.50), ("VEA", 0.30), ("BND", 0.20)]
     
     orders = []
@@ -125,11 +116,9 @@ def generate_auto_portfolio(amount, profile):
         budget = amount * weight
         try:
             price = yf.Ticker(ticker).fast_info.last_price
-            shares = int(budget / price) # Acciones enteras
-            if shares > 0:
-                orders.append({'Ticker': ticker, 'Shares': shares, 'AvgPrice': price})
+            shares = int(budget / price)
+            if shares > 0: orders.append({'Ticker': ticker, 'Shares': shares, 'AvgPrice': price})
         except: continue
-        
     return orders
 
 def get_news_rss():
@@ -153,7 +142,7 @@ def ai_audit(portfolio, profile, api_key):
 
 # --- 4. FLUJO DE APP ---
 
-# === ONBOARDING ===
+# === ONBOARDING (TEST) ===
 if not st.session_state.onboarding_complete:
     with st.container():
         st.markdown(f"""<div class="onboarding-box"><h1>🏛️ Wealth OS</h1><p style="color:#6b7280;">Configuración Inicial</p></div>""", unsafe_allow_html=True)
@@ -171,12 +160,39 @@ if not st.session_state.onboarding_complete:
 
 # === PLATAFORMA PRINCIPAL ===
 else:
+    # --- SIDEBAR (CONFIGURACIÓN) ---
+    with st.sidebar:
+        st.header("⚙️ Ajustes")
+        st.markdown("Cambia tu perfil en cualquier momento.")
+        
+        # Selector de Perfil Dinámico
+        options = ["Conservador 🛡️", "Equilibrado ⚖️", "Agresivo 🔥"]
+        
+        # Encontrar el índice actual
+        try: current_idx = options.index(st.session_state.profile)
+        except: current_idx = 1
+            
+        new_profile = st.selectbox("Tu Perfil de Riesgo", options, index=current_idx)
+        
+        # Si cambia, actualizamos estado
+        if new_profile != st.session_state.profile:
+            st.session_state.profile = new_profile
+            st.toast(f"Perfil actualizado a: {new_profile}", icon="🔄")
+            time.sleep(1)
+            st.rerun()
+            
+        st.divider()
+        if st.button("🔄 Reiniciar App (Onboarding)"):
+            st.session_state.clear()
+            st.rerun()
+
+    # --- MAIN CONTENT ---
     tape = get_ticker_tape()
     st.markdown(f"""<div class="ticker-wrap"><div style="display:inline-block; animation:marquee 30s linear infinite;">{tape} {tape} {tape}</div></div><style>@keyframes marquee {{ 0% {{ transform: translateX(0); }} 100% {{ transform: translateX(-50%); }} }}</style>""", unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns([3, 1, 1])
     with c1: st.title("Wealth OS")
-    with c2: st.metric("Perfil", st.session_state.profile)
+    with c2: st.metric("Perfil Actual", st.session_state.profile)
     with c3: st.metric("Saldo", f"{st.session_state.cash:,.0f} €")
     
     tab_market, tab_port, tab_search, tab_oracle = st.tabs(["📊 Mercado Hoy", "💼 Mi Cartera", "🔎 Explorador", "🔮 El Oráculo"])
@@ -224,11 +240,9 @@ else:
             elif spy_ret < -2: st.error("VOLÁTIL")
             else: st.warning("NEUTRO")
 
-    # --- TAB 2: MI CARTERA (NUEVA FUNCIÓN AUTO) ---
+    # --- TAB 2: MI CARTERA ---
     with tab_port:
         col_view, col_add = st.columns([3, 1])
-        
-        # VISUALIZACIÓN
         with col_view:
             st.subheader("📊 Resumen de Activos")
             if st.session_state.portfolio:
@@ -250,52 +264,42 @@ else:
                 st.dataframe(df_p, use_container_width=True)
                 fig = go.Figure(data=[go.Pie(labels=df_p['Ticker'], values=df_p['Valor Actual'], hole=.4)])
                 st.plotly_chart(fig, use_container_width=True)
-            else: st.info("Cartera vacía. Usa el panel derecho para empezar.")
+            else: st.info("Cartera vacía. Usa el panel derecho.")
 
-        # PANEL DERECHO DE ACCIONES
         with col_add:
-            # 1. GENERADOR AUTOMÁTICO (LO QUE PEDISTE)
+            # 1. AUTO
             st.markdown('<div class="auto-box">', unsafe_allow_html=True)
-            st.markdown("### ⚡ Generador Automático")
-            st.caption(f"Crea una cartera ideal para perfil **{st.session_state.profile}**.")
-            
-            auto_amt = st.number_input("Cantidad a invertir (€)", 1000, 100000, 5000)
-            
-            if st.button("🤖 Generar Cartera IA", type="primary"):
+            st.markdown("### ⚡ Robo-Advisor")
+            st.caption(f"Cartera ideal para perfil **{st.session_state.profile}**.")
+            auto_amt = st.number_input("Invertir (€)", 1000, 100000, 5000)
+            if st.button("🤖 Invertir Automático", type="primary"):
                 if st.session_state.cash >= auto_amt:
-                    with st.spinner("Diseñando asignación de activos..."):
+                    with st.spinner("Generando cartera..."):
                         orders = generate_auto_portfolio(auto_amt, st.session_state.profile)
-                        if orders:
-                            for order in orders:
-                                st.session_state.portfolio.append(order)
-                            st.session_state.cash -= auto_amt
-                            st.toast("Cartera Generada con éxito!", icon="🚀")
-                            time.sleep(1)
-                            st.rerun()
-                        else: st.error("No se pudo generar.")
-                else: st.error("No tienes suficiente saldo ficticio.")
+                        for o in orders: st.session_state.portfolio.append(o)
+                        st.session_state.cash -= auto_amt
+                        st.toast("Cartera Creada!", icon="🚀")
+                        time.sleep(1)
+                        st.rerun()
+                else: st.error("Saldo insuficiente")
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # 2. AÑADIR MANUAL
+            # 2. MANUAL
             st.markdown('<div class="add-box">', unsafe_allow_html=True)
-            st.markdown("### ➕ Añadir Manual")
+            st.markdown("### ➕ Manual")
             with st.form("manual_add"):
-                m_ticker = st.text_input("Ticker (Ej: VOO)").upper()
-                m_qty = st.number_input("Cantidad", 1, 10000, 1)
-                m_price = st.number_input("Precio (€)", 0.0, 100000.0, 100.0)
-                if st.form_submit_button("Registrar"):
+                m_ticker = st.text_input("Ticker").upper()
+                m_qty = st.number_input("Cant", 1, 10000, 1)
+                m_price = st.number_input("Precio", 0.0, 100000.0, 100.0)
+                if st.form_submit_button("Añadir"):
                     st.session_state.portfolio.append({'Ticker': m_ticker, 'Shares': m_qty, 'AvgPrice': m_price})
                     st.rerun()
             
             st.divider()
-            
-            # 3. AUDITORÍA
-            st.markdown("### 🤖 Auditoría")
             api_aud = st.text_input("API Key", type="password", key="aud_key")
             if st.button("Auditar") and api_aud:
                 with st.spinner("Analizando..."): st.info(ai_audit(st.session_state.portfolio, st.session_state.profile, api_aud))
-            
-            if st.button("🗑️ Borrar Todo"):
+            if st.button("🗑️ Reset"):
                 st.session_state.portfolio = []
                 st.session_state.cash = 10000.0
                 st.rerun()
@@ -307,14 +311,13 @@ else:
         st.caption("Sugerencias:")
         col_sugs = st.columns(6)
         sug_list = [("S&P 500", "SPY"), ("Tecnología", "QQQ"), ("Mundo", "VT"), ("Oro", "GLD"), ("Bonos", "BND"), ("Dividendos", "VIG")]
-        
         for i, (label, ticker_sug) in enumerate(sug_list):
             with col_sugs[i]:
                 if st.button(label, use_container_width=True):
                     st.session_state.search_query = ticker_sug
                     st.rerun()
         
-        search = st.text_input("Escribe Ticker:", value=st.session_state.search_query).upper()
+        search = st.text_input("Ticker:", value=st.session_state.search_query).upper()
         if search:
             try:
                 stock = yf.Ticker(search)
